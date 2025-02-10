@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Chat Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        #inputMessage { width: 80%; padding: 5px; }
+        #sendBtn { padding: 5px 10px; }
+    </style>
+</head>
+<body>
+    <h2>💬 WebSocket 채팅 클라이언트</h2>
+    <div id="messages"></div>
+    <input type="text" id="inputMessage" placeholder="메시지를 입력하세요" />
+    <button id="sendBtn">보내기</button>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:3000');
+
+        socket.onopen = () => {
+            console.log('✅ 서버에 연결되었습니다.');
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);  // JSON 문자열 파싱
+                console.log('📥 수신된 메시지:', data);  // 수신 데이터 확인
+
+                const messageElement = document.createElement('div');
+                messageElement.textContent = `[${data.clientId}] ${data.message}`;
+                document.getElementById('messages').appendChild(messageElement);
+            } catch (error) {
+                console.error('❌ 메시지 파싱 오류:', error);
+            }
+        };
+
+        document.getElementById('sendBtn').onclick = () => {
+            const message = document.getElementById('inputMessage').value;
+            if (message.trim() !== '') {
+                socket.send(message);  // 문자열 전송
+                document.getElementById('inputMessage').value = '';  // 입력창 초기화
+            }
+        };
+    </script>
+</body>
+</html>

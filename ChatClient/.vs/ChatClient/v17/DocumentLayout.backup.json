@@ -1,0 +1,68 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\chatclient\\form1.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|solutionrelative:chatclient\\form1.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\chatclient\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|solutionrelative:chatclient\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\chatclient\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
+      "RelativeMoniker": "D:0:0:{E5A788BB-8471-4E25-8C6A-279EB1E8D0AD}|ChatClient\\ChatClient.csproj|solutionrelative:chatclient\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Form1.Designer.cs",
+              "DocumentMoniker": "C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\ChatClient\\Form1.Designer.cs",
+              "RelativeDocumentMoniker": "ChatClient\\Form1.Designer.cs",
+              "ToolTip": "C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\ChatClient\\Form1.Designer.cs",
+              "RelativeToolTip": "ChatClient\\Form1.Designer.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-02-10T00:53:52.878Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Form1.cs",
+              "DocumentMoniker": "C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\ChatClient\\Form1.cs",
+              "RelativeDocumentMoniker": "ChatClient\\Form1.cs",
+              "ToolTip": "C:\\Users\\PC\\Documents\\VisualStudioRepo\\ChatClient\\ChatClient\\Form1.cs*",
+              "RelativeToolTip": "..\\..\\..\\VisualStudioRepo\\ChatClient\\ChatClient\\Form1.cs*",
+              "ViewState": "AgIAAFAAAAAAAAAAAAAQwG0AAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-02-10T00:53:36.12Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Form1.cs [\uB514\uC790\uC778]",
+              "DocumentMoniker": "C:\\Users\\PC\\Documents\\Project\\ChatProgram\\ChatClient\\ChatClient\\Form1.cs",
+              "RelativeDocumentMoniker": "ChatClient\\Form1.cs",
+              "ToolTip": "C:\\Users\\PC\\Documents\\VisualStudioRepo\\ChatClient\\ChatClient\\Form1.cs [\uB514\uC790\uC778]*",
+              "RelativeToolTip": "..\\..\\..\\VisualStudioRepo\\ChatClient\\ChatClient\\Form1.cs [\uB514\uC790\uC778]*",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-02-10T00:49:06.811Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
