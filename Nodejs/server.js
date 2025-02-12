@@ -30,6 +30,7 @@ io.on('connection', (socket) => {
     connectedClients.set(clientId, socket)
 
     console.log(`✅ 새로운 클라이언트가 연결되었습니다: ${clientId}`);
+    console.log('📋 현재 연결된 클라이언트:', Array.from(connectedClients.keys()));
 
     // 클라이언트들에게 초기화 메시지 전송(init)
     socket.emit('init', { clientId: clientId });
@@ -50,6 +51,8 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`❌ 클라이언트 연결 해제: ${clientId}`);
         connectedClients.delete(clientId);
+        console.log('📋 현재 연결된 클라이언트:', Array.from(connectedClients.keys()));
+
     });
 });
 
@@ -63,15 +66,19 @@ const tcpServer = net.createServer((socket) => {
         const dataLength = data.readUInt32BE(1); // 데이터 길이 (4바이트)
         const payload = data.slice(5, 5 + dataLength).toString(); // 데이터 부분분
 
+        console.log("📥 수신된 명령어:", command);
+
         if (command === 0x01) { // 클라이언트 리스트 요청
             const clientIds = Array.from(connectedClients.keys()).join(',');
-            const response = Buffer.concat([
-                Buffer.from([0x11]), // 응답코드
-                Buffer.alloc(4), // 데이터 길이(임시)
-                Buffer.from(clientIds)
-            ]);
-            response.writeUint32BE(clientIds.length, 1); // 실제 데이터 길이 설정
-            socket.write(response);
+            const clientIdsBuffer = Buffer.from(clientIds, 'utf-8'); // 문자열을 Buffer로 변환
+    
+            const response = Buffer.alloc(1 + 4 + clientIdsBuffer.length); 
+            response.writeUInt8(0x11, 0);                          // 응답 코드 (1바이트)
+            response.writeUInt32BE(clientIdsBuffer.length, 1);     // 데이터 길이 (4바이트)
+            clientIdsBuffer.copy(response, 5);                     // 실제 데이터 복사
+    
+            socket.write(response);                                // 클라이언트로 전송
+            console.log(`👤 클라이언트 목록 전송: ${clientIds}`);
         } else if (command === 0x02) { // 개인 메시지 전송
             const [targetClientId, message] = payload.split('|');
             const targetSocket = connectedClients.get(targetClientId);
