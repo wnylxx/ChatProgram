@@ -1,14 +1,16 @@
 const express = require('express');
 const http = require('http');
-// const WebSocket = require('ws');
+// const WebSocket = require('ws'); // websocket 사용시
 const { Server } = require('socket.io');
+const net = require('net'); // TCP 서버 추가
 
 const app = express();
 const server = http.createServer(app);
 // const wss = new WebSocket.Server({ server });
 const io = new Server(server);
 
-let clientCount = 0; 
+let clientCount = 0;
+const connectedClients = new Map(); // 클라이언트 ID 관리
 
 // 클라이언트 ID 생성 함수
 function generateClientId() {
@@ -21,8 +23,12 @@ app.get('/', (req, res) => {
     res.send('Socket.IO 서버가 실행 중입니다.');
 });
 
+
+// Socket.io 연결 처리리
 io.on('connection', (socket) => {
     const clientId = generateClientId();
+    connectedClients.set(clientId, socket)
+
     console.log(`✅ 새로운 클라이언트가 연결되었습니다: ${clientId}`);
 
     // 클라이언트들에게 초기화 메시지 전송(init)
@@ -43,13 +49,74 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`❌ 클라이언트 연결 해제: ${clientId}`);
+        connectedClients.delete(clientId);
     });
-
-
 });
 
 
+//TCP 서버 설정
+const tcpServer = net.createServer((socket) => {
+    console.log('🔗 TCP 클라이언트 연결됨');
 
+    socket.on('data', (data) => {
+        const command = data.readUInt8(0); //명령어 (1바이트)
+        const dataLength = data.readUInt32BE(1); // 데이터 길이 (4바이트)
+        const payload = data.slice(5, 5 + dataLength).toString(); // 데이터 부분분
+
+        if (command === 0x01) { // 클라이언트 리스트 요청
+            const clientIds = Array.from(connectedClients.keys()).join(',');
+            const response = Buffer.concat([
+                Buffer.from([0x11]), // 응답코드
+                Buffer.alloc(4), // 데이터 길이(임시)
+                Buffer.from(clientIds)
+            ]);
+            response.writeUint32BE(clientIds.length, 1); // 실제 데이터 길이 설정
+            socket.write(response);
+        } else if (command === 0x02) { // 개인 메시지 전송
+            const [targetClientId, message] = payload.split('|');
+            const targetSocket = connectedClients.get(targetClientId);
+
+            if (targetSocket) {
+                targetSocket.emit('message', { clientId: 'TCP_Sever', message });
+                const successResponse = Buffer.concat([
+                    Buffer.from([0x12]),
+                    Buffer.alloc(4),
+                    Buffer.from('Success')
+                ]);
+                successResponse.writeUInt32BE(7,1);
+                socket.write(successResponse);
+            } else {
+                const errorResponse = Buffer.concat([
+                    Buffer.from([0x12]),
+                    Buffer.alloc(4),
+                    Buffer.from('UserNotFound')
+                ]);
+                errorResponse.writeUInt32BE(12,1);
+                socket.write(errorResponse);
+            }
+        } 
+    });
+
+    socket.on('close', () => {
+        console.log('❌ TCP 클라이언트 연결 종료')
+    });
+
+    socket.on('error', (err) => {
+        console.error('🚨 TCP 에러:', err);
+    });
+})
+
+// 서버 시작
+const HTTP_PORT = 3000;
+const TCP_PORT = 4000;
+
+server.listen(HTTP_PORT, () => {
+    console.log(`✅ 서버가 http://localhost:${HTTP_PORT} 에서 실행 중입니다.`);
+});
+
+tcpServer.listen(TCP_PORT, () => {
+    console.log(`✅ TCP 서버가 포트 ${TCP_PORT} 에서 실행 중입니다.`);
+});
 
 
 
@@ -90,7 +157,4 @@ io.on('connection', (socket) => {
 //     });
 // });
 
-const PORT = 3000;
-server.listen(PORT, () => {
-    console.log(`✅ 서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
-});
+
