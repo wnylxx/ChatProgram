@@ -77,6 +77,13 @@ const tcpServer = net.createServer((socket) => {
             response.writeUInt32BE(clientIdsBuffer.length, 1);     // 데이터 길이 (4바이트)
             clientIdsBuffer.copy(response, 5);                     // 실제 데이터 복사
     
+            // 디버깅 용
+            console.log("📤 서버가 클라이언트에게 보내는 데이터:", response);
+            console.log("🔢 응답 코드:", response.readUInt8(0));  // 첫 바이트 (응답 코드)
+            console.log("📏 데이터 길이:", response.readUInt32BE(1)); // 데이터 길이 (4바이트)
+            console.log("💾 실제 데이터:", response.slice(5).toString());
+
+
             socket.write(response);                                // 클라이언트로 전송
             console.log(`👤 클라이언트 목록 전송: ${clientIds}`);
         } else if (command === 0x02) { // 개인 메시지 전송

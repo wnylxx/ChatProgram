@@ -11,6 +11,7 @@ using System.Windows.Forms;
 using Newtonsoft.Json;
 using SocketIOClient;
 using System.Net.Sockets;
+using System.Buffers.Binary;
 
 namespace ChatClient
 {
@@ -120,13 +121,18 @@ namespace ChatClient
                     lblTCPStatus.Text = $"✅ TCP 서버에 연결됨: {serverIP}:{serverPort}";
 
                     // 데이터 수신 스레드 시작 ( UI 멈춤 현상 방지를 위해 따로 스레드를 배정해줌 )
-                    Thread receiveThread = new Thread(ReceiveTCPData);
-                    receiveThread.IsBackground = true;
-                    receiveThread.Start();
+                    //Thread receiveThread = new Thread(ReceiveTCPData);
+                    //receiveThread.IsBackground = true;
+                    //receiveThread.Start();
                 }
 
-                byte command = Convert.ToByte(txtCommand.Text, 16);
-                byte[] data = Encoding.UTF8.GetBytes("데이터");
+                // ✅ 명령어를 확실하게 변환 (16진수 "01" -> 0x01)
+                if (!byte.TryParse(txtCommand.Text, System.Globalization.NumberStyles.HexNumber, null, out byte command))
+                {
+                    MessageBox.Show("🚨 잘못된 명령어 입력! 16진수 형식으로 입력하세요 (예: 01, 02)");
+                    return;
+                }
+                byte[] data = Encoding.UTF8.GetBytes(""); // 데이터는 비워둠
                 byte[] length = BitConverter.GetBytes(data.Length);
                 byte[] packet = new byte[1 + 4 + data.Length];
                 packet[0] = command;
@@ -136,6 +142,9 @@ namespace ChatClient
                 tcpStream.Write(packet, 0, packet.Length);
                 lstMessages.Items.Add($"📤 명령 전송: 0x{command:X2}");
 
+
+                // ✅ 명령어 전송 후 수신 시작 (백그라운드 스레드)
+                Task.Run(() => ReceiveTCPData());
 
             }
             catch (Exception ex) 
@@ -156,13 +165,25 @@ namespace ChatClient
                 {
                     int bytesRead = tcpStream.Read(buffer, 0, buffer.Length);
 
-                    if (bytesRead >= 5) // 최소 5바이트 이상이어야 유효 (1바이트 명령어 + 4바이트 길이)
+                    if (bytesRead > 5)
                     {
                         byte responseCode = buffer[0];
-                        int dataLength = BitConverter.ToInt32(buffer, 1);
 
-                        // ✅ 유효성 검사: 데이터 길이 확인
-                        // TODO! 내일 해야함!
+                        // ❌ 기존 코드 (리틀 엔디언으로 읽어서 문제 발생)
+                        // int dataLength = BitConverter.ToInt32(buffer, 1);
+
+                        // ✅ 수정 코드 (Big Endian 방식으로 읽기)
+                        int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
+
+                        // 데이터 길이 검증
+                        if (dataLength < 0 || dataLength > buffer.Length - 5)
+                        {
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                lstMessages.Items.Add($"❌ 잘못된 데이터 길이 감지: {dataLength}");
+                            });
+                            return;
+                        }
 
                         string clientList = Encoding.UTF8.GetString(buffer, 5, dataLength);
 
@@ -175,14 +196,12 @@ namespace ChatClient
                                 {
                                     lstMessages.Items.Add($"👤 {clientId}");
                                 }
-
                             });
                         }
                     }
-
                 }
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 this.Invoke((MethodInvoker)delegate
                 {

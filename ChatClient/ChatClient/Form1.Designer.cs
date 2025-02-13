@@ -111,7 +111,7 @@
 
 
             // Form1
-            this.ClientSize = new System.Drawing.Size(370, 430);
+            this.ClientSize = new System.Drawing.Size(370, 450);
             this.Controls.Add(this.btnConnect);
             this.Controls.Add(this.btnSend);
             this.Controls.Add(this.btnDisconnect);
