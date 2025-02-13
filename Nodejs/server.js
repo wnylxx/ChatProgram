@@ -66,7 +66,7 @@ const tcpServer = net.createServer((socket) => {
         const dataLength = data.readUInt32BE(1); // 데이터 길이 (4바이트)
         const payload = data.slice(5, 5 + dataLength).toString(); // 데이터 부분분
 
-        console.log("📥 수신된 명령어:", command);
+        console.log(`📩 수신된 명령어: ${command.toString(16).padStart(2, '0')}`);
 
         if (command === 0x01) { // 클라이언트 리스트 요청
             const clientIds = Array.from(connectedClients.keys()).join(',');
@@ -86,28 +86,41 @@ const tcpServer = net.createServer((socket) => {
 
             socket.write(response);                                // 클라이언트로 전송
             console.log(`👤 클라이언트 목록 전송: ${clientIds}`);
+
         } else if (command === 0x02) { // 개인 메시지 전송
-            const [targetClientId, message] = payload.split('|');
+            const payloadStr = payload.toString('utf-8');
+            const parts = payloadStr.split('\x00');
+            
+            if (parts.length < 2) {
+                console.log(`🚨 잘못된 데이터 형식! payload: "${payloadStr}"`);
+                return;
+            }
+
+            const [targetClientId, message] = parts;
+            console.log(`📩 개인 메시지 요청: 대상=${targetClientId}, 메시지="${message}"`);
+
             const targetSocket = connectedClients.get(targetClientId);
 
             if (targetSocket) {
-                targetSocket.emit('message', { clientId: 'TCP_Sever', message });
-                const successResponse = Buffer.concat([
-                    Buffer.from([0x12]),
-                    Buffer.alloc(4),
-                    Buffer.from('Success')
-                ]);
-                successResponse.writeUInt32BE(7,1);
-                socket.write(successResponse);
+                const messageBuffer = Buffer.from(message, 'utf-8');
+                const response = Buffer.alloc(1 + 4 + messageBuffer.length);
+                response.writeUInt8(0x12, 0);
+                response.writeUInt32BE(messageBuffer.length, 1);
+                messageBuffer.copy(response, 5);
+
+                console.log(`📤 클라이언트(${targetClientId})에게 보낼 데이터:`, response);
+                console.log(`📤 보낼 데이터 HEX: ${response.toString('hex')}`);
+                console.log(`📤 보낼 데이터 크기: ${response.length}, 예상 크기: ${5 + messageBuffer.length}`);
+
+
+                
+
             } else {
-                const errorResponse = Buffer.concat([
-                    Buffer.from([0x12]),
-                    Buffer.alloc(4),
-                    Buffer.from('UserNotFound')
-                ]);
-                errorResponse.writeUInt32BE(12,1);
-                socket.write(errorResponse);
+                console.log(`❌ 대상 클라이언트(${targetClientId})를 찾을 수 없음`);
             }
+
+            // TCP 연결을 유지하는 지 확인용용
+            console.log(`🔗 현재 연결된 클라이언트 목록:`, Array.from(connectedClients.keys()));
         } 
     });
 

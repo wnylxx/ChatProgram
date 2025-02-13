@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using SocketIOClient;
 using System.Net.Sockets;
 using System.Buffers.Binary;
+using System.Net;
 
 namespace ChatClient
 {
@@ -111,7 +112,7 @@ namespace ChatClient
         {
             try
             {
-                if (tcpClient == null || !tcpClient.Connected )
+                if (tcpClient == null || !tcpClient.Connected)
                 {
                     string serverIP = txtServerIP.Text;
                     int serverPort = int.Parse(txtServerPort.Text);
@@ -120,34 +121,62 @@ namespace ChatClient
                     tcpStream = tcpClient.GetStream();
                     lblTCPStatus.Text = $"✅ TCP 서버에 연결됨: {serverIP}:{serverPort}";
 
-                    // 데이터 수신 스레드 시작 ( UI 멈춤 현상 방지를 위해 따로 스레드를 배정해줌 )
-                    //Thread receiveThread = new Thread(ReceiveTCPData);
-                    //receiveThread.IsBackground = true;
-                    //receiveThread.Start();
+                    StartTCPReceiver();
                 }
 
-                // ✅ 명령어를 확실하게 변환 (16진수 "01" -> 0x01)
-                if (!byte.TryParse(txtCommand.Text, System.Globalization.NumberStyles.HexNumber, null, out byte command))
+                string input = txtCommand.Text.Trim(); // 사용자가 입력한 명령어
+                string[] parts = input.Split(new[] { ',' }, 3);
+
+
+                if (parts.Length < 1)
                 {
-                    MessageBox.Show("🚨 잘못된 명령어 입력! 16진수 형식으로 입력하세요 (예: 01, 02)");
+                    MessageBox.Show("🚨 올바른 명령어를 입력하세요!");
                     return;
                 }
-                byte[] data = Encoding.UTF8.GetBytes(""); // 데이터는 비워둠
-                byte[] length = BitConverter.GetBytes(data.Length);
-                byte[] packet = new byte[1 + 4 + data.Length];
-                packet[0] = command;
-                Array.Copy(length, 0, packet, 1, 4);
-                Array.Copy(data, 0, packet, 5, data.Length);
+
+
+                byte command = Convert.ToByte(parts[0], 16);
+                byte[] packet;
+
+                if (command == 0x02)
+                {
+                    if(parts.Length < 3)
+            {
+                        MessageBox.Show("🚨 올바른 형식: 02,대상ID,메시지");
+                        return;
+                    }
+
+                    string targetClientId = parts[1];
+                    string message = parts[2];
+
+                    byte[] clientIdBytes = Encoding.UTF8.GetBytes(targetClientId);
+                    byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+                    int dataLength = clientIdBytes.Length + 1 + messageBytes.Length;
+
+                    packet = new byte[1 + 4 + dataLength];
+                    packet[0] = command;
+                    BitConverter.GetBytes(IPAddress.HostToNetworkOrder(dataLength)).CopyTo(packet, 1);
+                    clientIdBytes.CopyTo(packet, 5);
+                    packet[5 + clientIdBytes.Length] = 0x00;
+                    messageBytes.CopyTo(packet, 6 + clientIdBytes.Length);
+                } else
+                {
+                    byte[] data = Encoding.UTF8.GetBytes("데이터");
+                    byte[] length = BitConverter.GetBytes(IPAddress.HostToNetworkOrder(data.Length));
+                    packet = new byte[1 + 4 + data.Length];
+                    packet[0] = command;
+                    Array.Copy(length, 0, packet, 1, 4);
+                    Array.Copy(data, 0, packet, 5, data.Length);
+                }
+
 
                 tcpStream.Write(packet, 0, packet.Length);
+
                 lstMessages.Items.Add($"📤 명령 전송: 0x{command:X2}");
 
 
-                // ✅ 명령어 전송 후 수신 시작 (백그라운드 스레드)
-                Task.Run(() => ReceiveTCPData());
-
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 MessageBox.Show($"🚨 오류: {ex.Message}");
             }
@@ -159,46 +188,87 @@ namespace ChatClient
         {
             try
             {
-                byte[] buffer = new byte[1024];
+                byte[] buffer = new byte[1024]; // 충분한 버퍼 크기 확보
+
+                this.Invoke((MethodInvoker)delegate
+                {
+                    lstMessages.Items.Add("✅ ReceiveTCPData 함수 실행됨");
+                });
 
                 while (tcpClient.Connected)
                 {
-                    int bytesRead = tcpStream.Read(buffer, 0, buffer.Length);
-
-                    if (bytesRead > 5)
+                    if (tcpStream.DataAvailable)
                     {
-                        byte responseCode = buffer[0];
+                        int bytesRead = tcpStream.Read(buffer, 0, buffer.Length); // 🚨 DataAvailable 체크 없이 바로 읽기
 
-                        // ❌ 기존 코드 (리틀 엔디언으로 읽어서 문제 발생)
-                        // int dataLength = BitConverter.ToInt32(buffer, 1);
 
-                        // ✅ 수정 코드 (Big Endian 방식으로 읽기)
-                        int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
-
-                        // 데이터 길이 검증
-                        if (dataLength < 0 || dataLength > buffer.Length - 5)
+                        if (bytesRead > 0)
                         {
+                            byte responseCode = buffer[0];
+
+                            // ✅ 수신된 RAW 데이터 로그 추가
+                            string receivedHex = BitConverter.ToString(buffer, 0, bytesRead);
                             this.Invoke((MethodInvoker)delegate
                             {
-                                lstMessages.Items.Add($"❌ 잘못된 데이터 길이 감지: {dataLength}");
+                                lstMessages.Items.Add($"📥 수신된 RAW 데이터: {receivedHex}");
                             });
-                            return;
-                        }
 
-                        string clientList = Encoding.UTF8.GetString(buffer, 5, dataLength);
+                            int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
 
-                        if (responseCode == 0x11)
-                        {
-                            this.Invoke((MethodInvoker)delegate
+                            // 데이터 길이 검증
+                            if (dataLength < 0 || dataLength > buffer.Length - 5)
                             {
-                                lstMessages.Items.Add("✅ 연결된 클라이언트 목록:");
-                                foreach (var clientId in clientList.Split(','))
+                                this.Invoke((MethodInvoker)delegate
                                 {
-                                    lstMessages.Items.Add($"👤 {clientId}");
-                                }
+                                    lstMessages.Items.Add($"❌ 잘못된 데이터 길이 감지: {dataLength}");
+                                });
+                                return;
+                            }
+
+                            string receivedMessage = Encoding.UTF8.GetString(buffer, 5, dataLength);
+
+                            if (responseCode == 0x11) // 클라이언트 목록 수신
+                            {
+                                this.Invoke((MethodInvoker)delegate
+                                {
+                                    lstMessages.Items.Add("✅ 연결된 클라이언트 목록:");
+                                    foreach (var clientId in receivedMessage.Split(','))
+                                    {
+                                        lstMessages.Items.Add($"👤 {clientId}");
+                                    }
+                                });
+                            }
+                            else if (responseCode == 0x12) // 개인 메시지 수신
+                            {
+                                this.Invoke((MethodInvoker)delegate
+                                {
+                                    lstMessages.Items.Add($"📩 개인 메시지 수신: {receivedMessage}");
+                                });
+                            }
+                            else
+                            {
+                                this.Invoke((MethodInvoker)delegate
+                                {
+                                    lstMessages.Items.Add($"❓ 알 수 없는 응답 코드: 0x{responseCode:X2}");
+                                });
+                            }
+                        } else
+                        {
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                lstMessages.Items.Add("⚠️ Read() 실행했지만 데이터 없음");
                             });
                         }
+
+                    } else
+                    {
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            lstMessages.Items.Add("⏳ 데이터 없음, 대기 중...");
+                        });
+                        Thread.Sleep(100); // CPU 점유율 방지
                     }
+                    
                 }
             }
             catch (Exception ex)
@@ -208,6 +278,29 @@ namespace ChatClient
                     lstMessages.Items.Add($"❌ 데이터 수신 오류: {ex.Message}");
                 });
             }
+        }
+
+
+        private void StartTCPReceiver()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    while (tcpClient != null && tcpClient.Connected)
+                    {
+                        ReceiveTCPData();
+                    }
+                }
+
+                catch (Exception ex)
+                {
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        lstMessages.Items.Add($"❌ TCP 수신 오류: {ex.Message}");
+                    });
+                }
+            });
         }
 
     }
