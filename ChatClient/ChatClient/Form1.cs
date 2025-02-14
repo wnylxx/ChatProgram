@@ -32,20 +32,39 @@ namespace ChatClient
 
         private async void btnConnect_Click(object sender, EventArgs e)
         {
+
+            if ((socket != null && socket.Connected) || (tcpClient != null && tcpClient.Connected))
+            {
+                MessageBox.Show("이미 연결되어 있습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            //  Socket.IO 연결
             socket = new SocketIOClient.SocketIO("http://localhost:3000");
 
-            socket.OnConnected += (s, ev) =>
+            socket.OnConnected += async (s, evt) =>
             {
-                Console.WriteLine("서버에 연결되었습니다.");
-                lblSocketStatus.Invoke(new Action(() => lblSocketStatus.Text = "소켓 서버에 연결됨"));
+                if (tcpClient != null && tcpClient.Connected)
+                {
+                    btnConnect.Invoke((MethodInvoker)(() => btnConnect.Enabled = false));
+                    btnDisconnect.Invoke((MethodInvoker)(() => btnDisconnect.Enabled = true));
+                }
             };
+
+            socket.OnDisconnected += async (s, evt) =>
+            {
+                btnConnect.Invoke((MethodInvoker)(() => btnConnect.Enabled = true));
+                btnDisconnect.Invoke((MethodInvoker)(() => btnDisconnect.Enabled = false));
+            };
+
 
             socket.On("init", response =>
             {
                 // JSON 객체에서 값을 가져오기 위해 JsonElement 사용
                 var json = response.GetValue<System.Text.Json.JsonElement>();
                 clientId = json.GetProperty("clientId").GetString();  // JSON 속성 접근
-                lblSocketStatus.Invoke(new Action(() => lblSocketStatus.Text = $"서버에 연결됨: {clientId}"));
+                lblSocketStatus.Invoke(new Action(() => lblSocketStatus.Text = $"Socket 서버에 연결됨: {clientId}"));
+
             });
 
             socket.On("message", response =>
@@ -61,14 +80,32 @@ namespace ChatClient
                 }));
             });
 
+            await socket.ConnectAsync();
+
+
+            //TCP 연결
             try
             {
-                await socket.ConnectAsync();
+                tcpClient = new TcpClient();
+                await tcpClient.ConnectAsync("127.0.0.1", 4000); // TCP 서버 주소 및 포트
+                tcpStream = tcpClient.GetStream();
+
+                if (socket.Connected)
+                {
+                    btnConnect.Invoke((MethodInvoker)(() => btnConnect.Enabled = false));
+                    btnDisconnect.Invoke((MethodInvoker)(() => btnDisconnect.Enabled = true));
+                }
+
+                lblTCPStatus.Text = $"TCP 서버에 연결됨: {clientId}";
+
+                StartTCPReceiver();
+
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"서버 연결 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"TCP 연결 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
@@ -94,14 +131,31 @@ namespace ChatClient
             txtMessage.Clear();
         }
 
-        private async void btnDisconnect_Click(object sender, EventArgs e)
+        private void btnDisconnect_Click(object sender, EventArgs e)
         {
+            // Socket.IO 연결 해제
             if (socket != null && socket.Connected)
             {
-                await socket.DisconnectAsync();
-                lblSocketStatus.Text = "서버 연결 해제됨";
+                socket.DisconnectAsync();
+                socket.Dispose();
+                socket = null;
+
+                lblSocketStatus.Invoke(new Action(() => lblSocketStatus.Text = "Socket 서버연결 해제됨"));
             }
 
+            // TCP 연결 해제
+            if (tcpClient != null && tcpClient.Connected)
+            {
+                tcpStream?.Close();
+                tcpClient.Close();
+                tcpClient = null;
+
+
+                lblTCPStatus.Text = $"TCP 서버연결 해제됨";
+            }
+
+            btnConnect.Enabled = true;
+            btnDisconnect.Enabled = false;
         }
 
 
@@ -112,18 +166,6 @@ namespace ChatClient
         {
             try
             {
-                if (tcpClient == null || !tcpClient.Connected)
-                {
-                    string serverIP = txtServerIP.Text;
-                    int serverPort = int.Parse(txtServerPort.Text);
-
-                    tcpClient = new TcpClient(serverIP, serverPort);
-                    tcpStream = tcpClient.GetStream();
-                    lblTCPStatus.Text = $"✅ TCP 서버에 연결됨: {serverIP}:{serverPort}";
-
-                    StartTCPReceiver();
-                }
-
                 string input = txtCommand.Text.Trim(); // 사용자가 입력한 명령어
                 string[] parts = input.Split(new[] { ',' }, 3);
 
@@ -140,8 +182,8 @@ namespace ChatClient
 
                 if (command == 0x02)
                 {
-                    if(parts.Length < 3)
-            {
+                    if (parts.Length < 3)
+                    {
                         MessageBox.Show("🚨 올바른 형식: 02,대상ID,메시지");
                         return;
                     }
@@ -159,7 +201,8 @@ namespace ChatClient
                     clientIdBytes.CopyTo(packet, 5);
                     packet[5 + clientIdBytes.Length] = 0x00;
                     messageBytes.CopyTo(packet, 6 + clientIdBytes.Length);
-                } else
+                }
+                else
                 {
                     byte[] data = Encoding.UTF8.GetBytes("데이터");
                     byte[] length = BitConverter.GetBytes(IPAddress.HostToNetworkOrder(data.Length));
@@ -190,85 +233,70 @@ namespace ChatClient
             {
                 byte[] buffer = new byte[1024]; // 충분한 버퍼 크기 확보
 
-                this.Invoke((MethodInvoker)delegate
-                {
-                    lstMessages.Items.Add("✅ ReceiveTCPData 함수 실행됨");
-                });
-
                 while (tcpClient.Connected)
                 {
-                    if (tcpStream.DataAvailable)
+
+                    int bytesRead = tcpStream.Read(buffer, 0, buffer.Length); // 🚨 DataAvailable 체크 없이 바로 읽기
+
+
+                    if (bytesRead > 0)
                     {
-                        int bytesRead = tcpStream.Read(buffer, 0, buffer.Length); // 🚨 DataAvailable 체크 없이 바로 읽기
+                        byte responseCode = buffer[0];
 
-
-                        if (bytesRead > 0)
+                        // ✅ 수신된 RAW 데이터 로그 추가
+                        string receivedHex = BitConverter.ToString(buffer, 0, bytesRead);
+                        this.Invoke((MethodInvoker)delegate
                         {
-                            byte responseCode = buffer[0];
+                            lstMessages.Items.Add($"📥 수신된 RAW 데이터: {receivedHex}");
+                        });
 
-                            // ✅ 수신된 RAW 데이터 로그 추가
-                            string receivedHex = BitConverter.ToString(buffer, 0, bytesRead);
-                            this.Invoke((MethodInvoker)delegate
-                            {
-                                lstMessages.Items.Add($"📥 수신된 RAW 데이터: {receivedHex}");
-                            });
+                        int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
 
-                            int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
-
-                            // 데이터 길이 검증
-                            if (dataLength < 0 || dataLength > buffer.Length - 5)
-                            {
-                                this.Invoke((MethodInvoker)delegate
-                                {
-                                    lstMessages.Items.Add($"❌ 잘못된 데이터 길이 감지: {dataLength}");
-                                });
-                                return;
-                            }
-
-                            string receivedMessage = Encoding.UTF8.GetString(buffer, 5, dataLength);
-
-                            if (responseCode == 0x11) // 클라이언트 목록 수신
-                            {
-                                this.Invoke((MethodInvoker)delegate
-                                {
-                                    lstMessages.Items.Add("✅ 연결된 클라이언트 목록:");
-                                    foreach (var clientId in receivedMessage.Split(','))
-                                    {
-                                        lstMessages.Items.Add($"👤 {clientId}");
-                                    }
-                                });
-                            }
-                            else if (responseCode == 0x12) // 개인 메시지 수신
-                            {
-                                this.Invoke((MethodInvoker)delegate
-                                {
-                                    lstMessages.Items.Add($"📩 개인 메시지 수신: {receivedMessage}");
-                                });
-                            }
-                            else
-                            {
-                                this.Invoke((MethodInvoker)delegate
-                                {
-                                    lstMessages.Items.Add($"❓ 알 수 없는 응답 코드: 0x{responseCode:X2}");
-                                });
-                            }
-                        } else
+                        // 데이터 길이 검증
+                        if (dataLength < 0 || dataLength > buffer.Length - 5)
                         {
                             this.Invoke((MethodInvoker)delegate
                             {
-                                lstMessages.Items.Add("⚠️ Read() 실행했지만 데이터 없음");
+                                lstMessages.Items.Add($"❌ 잘못된 데이터 길이 감지: {dataLength}");
                             });
+                            return;
                         }
 
-                    } else
+                        string receivedMessage = Encoding.UTF8.GetString(buffer, 5, dataLength);
+
+                        if (responseCode == 0x11) // 클라이언트 목록 수신
+                        {
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                lstMessages.Items.Add("✅ 연결된 클라이언트 목록:");
+                                foreach (var clientId in receivedMessage.Split(','))
+                                {
+                                    lstMessages.Items.Add($"👤 {clientId}");
+                                }
+                            });
+                        }
+                        else if (responseCode == 0x12) // 개인 메시지 수신
+                        {
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                lstMessages.Items.Add($"📩 개인 메시지 수신: {receivedMessage}");
+                            });
+                        }
+                        else
+                        {
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                lstMessages.Items.Add($"❓ 알 수 없는 응답 코드: 0x{responseCode:X2}");
+                            });
+                        }
+                    }
+                    else
                     {
                         this.Invoke((MethodInvoker)delegate
                         {
-                            lstMessages.Items.Add("⏳ 데이터 없음, 대기 중...");
+                            lstMessages.Items.Add("⚠️ Read() 실행했지만 데이터 없음");
                         });
-                        Thread.Sleep(100); // CPU 점유율 방지
                     }
-                    
                 }
             }
             catch (Exception ex)

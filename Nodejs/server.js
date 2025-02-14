@@ -9,8 +9,10 @@ const server = http.createServer(app);
 // const wss = new WebSocket.Server({ server });
 const io = new Server(server);
 
+const connectedClients = new Map();  // Socket.IO 소켓 저장
+const tcpClients = new Map();        // TCP 소켓 저장
+
 let clientCount = 0;
-const connectedClients = new Map(); // 클라이언트 ID 관리
 
 // 클라이언트 ID 생성 함수
 function generateClientId() {
@@ -27,10 +29,11 @@ app.get('/', (req, res) => {
 // Socket.io 연결 처리리
 io.on('connection', (socket) => {
     const clientId = generateClientId();
+
     connectedClients.set(clientId, socket)
 
-    console.log(`✅ 새로운 클라이언트가 연결되었습니다: ${clientId}`);
-    console.log('📋 현재 연결된 클라이언트:', Array.from(connectedClients.keys()));
+    console.log(`🔗 Socket.IO 클라이언트 연결됨: ${clientId}`);
+    console.log('📋 현재 Socket.IO 연결된 클라이언트:', Array.from(connectedClients.keys()));
 
     // 클라이언트들에게 초기화 메시지 전송(init)
     socket.emit('init', { clientId: clientId });
@@ -49,7 +52,7 @@ io.on('connection', (socket) => {
 
 
     socket.on('disconnect', () => {
-        console.log(`❌ 클라이언트 연결 해제: ${clientId}`);
+        console.log(`❌ Socket.IO 클라이언트 연결 종료: ${clientId}`);
         connectedClients.delete(clientId);
         console.log('📋 현재 연결된 클라이언트:', Array.from(connectedClients.keys()));
 
@@ -59,7 +62,9 @@ io.on('connection', (socket) => {
 
 //TCP 서버 설정
 const tcpServer = net.createServer((socket) => {
-    console.log('🔗 TCP 클라이언트 연결됨');
+    const clientId = `user_${String(clientCount).padStart(3, '0')}`
+    tcpClients.set(clientId, socket); // TCP 클라이언트 저장
+    console.log(`🔗 TCP 클라이언트 연결됨: ${clientId}`);
 
     socket.on('data', (data) => {
         const command = data.readUInt8(0); //명령어 (1바이트)
@@ -71,12 +76,12 @@ const tcpServer = net.createServer((socket) => {
         if (command === 0x01) { // 클라이언트 리스트 요청
             const clientIds = Array.from(connectedClients.keys()).join(',');
             const clientIdsBuffer = Buffer.from(clientIds, 'utf-8'); // 문자열을 Buffer로 변환
-    
-            const response = Buffer.alloc(1 + 4 + clientIdsBuffer.length); 
+
+            const response = Buffer.alloc(1 + 4 + clientIdsBuffer.length);
             response.writeUInt8(0x11, 0);                          // 응답 코드 (1바이트)
             response.writeUInt32BE(clientIdsBuffer.length, 1);     // 데이터 길이 (4바이트)
             clientIdsBuffer.copy(response, 5);                     // 실제 데이터 복사
-    
+
             // 디버깅 용
             console.log("📤 서버가 클라이언트에게 보내는 데이터:", response);
             console.log("🔢 응답 코드:", response.readUInt8(0));  // 첫 바이트 (응답 코드)
@@ -85,12 +90,13 @@ const tcpServer = net.createServer((socket) => {
 
 
             socket.write(response);                                // 클라이언트로 전송
+            console.log(`🔍 targetSocket 타입 확인:`, socket.constructor.name);
             console.log(`👤 클라이언트 목록 전송: ${clientIds}`);
 
         } else if (command === 0x02) { // 개인 메시지 전송
             const payloadStr = payload.toString('utf-8');
             const parts = payloadStr.split('\x00');
-            
+
             if (parts.length < 2) {
                 console.log(`🚨 잘못된 데이터 형식! payload: "${payloadStr}"`);
                 return;
@@ -99,29 +105,51 @@ const tcpServer = net.createServer((socket) => {
             const [targetClientId, message] = parts;
             console.log(`📩 개인 메시지 요청: 대상=${targetClientId}, 메시지="${message}"`);
 
-            const targetSocket = connectedClients.get(targetClientId);
+            const targetSocket = tcpClients.get(targetClientId);
 
-            if (targetSocket) {
-                const messageBuffer = Buffer.from(message, 'utf-8');
-                const response = Buffer.alloc(1 + 4 + messageBuffer.length);
-                response.writeUInt8(0x12, 0);
-                response.writeUInt32BE(messageBuffer.length, 1);
-                messageBuffer.copy(response, 5);
+            console.log(`🔍 대상 클라이언트 검색: ${targetClientId}`);
+            console.log(`🔗 현재 연결된 클라이언트 목록:`, Array.from(connectedClients.keys()));
 
-                console.log(`📤 클라이언트(${targetClientId})에게 보낼 데이터:`, response);
-                console.log(`📤 보낼 데이터 HEX: ${response.toString('hex')}`);
-                console.log(`📤 보낼 데이터 크기: ${response.length}, 예상 크기: ${5 + messageBuffer.length}`);
-
-
-                
-
-            } else {
-                console.log(`❌ 대상 클라이언트(${targetClientId})를 찾을 수 없음`);
+            if (!targetSocket) {
+                console.log(`❌ 대상 클라이언트(${targetClientId})을 찾을 수 없음`);
+                return;
+            } else if (targetSocket.destroyed) {
+                console.log(`❌ 대상 클라이언트(${targetClientId})의 소켓이 닫혀 있음. 전송 불가.`);
+                return;
             }
 
+            console.log(`✅ 대상 클라이언트(${targetClientId}) 소켓 찾음! 데이터 전송 시작`);
+
+            const messageBuffer = Buffer.from(message, 'utf-8');
+            const response = Buffer.alloc(1 + 4 + messageBuffer.length);
+
+            response.writeUInt8(0x12, 0); // 응답 코드 (0x12)
+            response.writeUInt32BE(messageBuffer.length, 1); // 메시지 길이 (Big Endian)
+            messageBuffer.copy(response, 5); // 메시지 복사
+
+            console.log("📤 서버가 클라이언트에게 보내는 데이터:", response);
+            console.log(`📤 보낼 데이터 HEX: ${response.toString('hex')}`);
+            console.log(`📤 예상 크기: ${response.length}`);
+
+            const writeSuccess = targetSocket.write(response, (err) => {
+                if (err) {
+                    console.log(`❌ 데이터 전송 실패: ${err.message}`);
+                } else {
+                    console.log("📤 데이터 전송 완료 (flush 실행)");
+                }
+            });
+        
+            console.log(`🧐 write() 실행 결과 (boolean):`, writeSuccess);
+            
+
+            targetSocket.on("drain", () => {
+                console.log("✅ 데이터가 실제로 모두 전송됨");
+            });
+
+
             // TCP 연결을 유지하는 지 확인용용
-            console.log(`🔗 현재 연결된 클라이언트 목록:`, Array.from(connectedClients.keys()));
-        } 
+            console.log(`🔗 현재 TCP 연결된 클라이언트 목록:`, Array.from(tcpClients.keys()));
+        }
     });
 
     socket.on('close', () => {
@@ -157,7 +185,7 @@ tcpServer.listen(TCP_PORT, () => {
 //     // 메시지 수신
 //     ws.on('message', (message) => {
 //         // 🛠️ 버퍼를 문자열로 변환
-//         const textMessage = message.toString();  
+//         const textMessage = message.toString();
 
 //         console.log(`💬 [${clientId}] 수신된 메시지: ${textMessage}`);
 
