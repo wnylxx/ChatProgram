@@ -42,7 +42,7 @@ namespace ChatClient
             //  Socket.IO 연결
             socket = new SocketIOClient.SocketIO("http://localhost:3000");
 
-            socket.OnConnected += async (s, evt) =>
+            socket.OnConnected += (s, evt) =>
             {
                 if (tcpClient != null && tcpClient.Connected)
                 {
@@ -51,7 +51,7 @@ namespace ChatClient
                 }
             };
 
-            socket.OnDisconnected += async (s, evt) =>
+            socket.OnDisconnected += (s, evt) =>
             {
                 btnConnect.Invoke((MethodInvoker)(() => btnConnect.Enabled = true));
                 btnDisconnect.Invoke((MethodInvoker)(() => btnDisconnect.Enabled = false));
@@ -245,10 +245,12 @@ namespace ChatClient
 
                         // ✅ 수신된 RAW 데이터 로그 추가
                         string receivedHex = BitConverter.ToString(buffer, 0, bytesRead);
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            lstMessages.Items.Add($"📥 수신된 RAW 데이터: {receivedHex}");
-                        });
+
+                        // ** 디버깅용 **
+                        //this.Invoke((MethodInvoker)delegate
+                        //{
+                        //    lstMessages.Items.Add($"📥 수신된 RAW 데이터: {receivedHex}");
+                        //});
 
                         int dataLength = BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(1));
 
